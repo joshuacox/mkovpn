@@ -1,9 +1,5 @@
 .PHONY: all help build run builddocker rundocker kill rm-image rm clean enter logs
 
-user = $(shell whoami)
-ifeq ($(user),root)
-$(error  "do not run as root! run 'gpasswd -a USER docker' on the user of your choice")
-endif
 
 all: help
 
@@ -17,25 +13,26 @@ help:
 	@echo ""   4. make enter     - execute an interactive bash in docker container
 	@echo ""   3. make logs      - follow the logs of docker container
 
-build: HOSTNAME NAME TAG OVPN_DATA OVPN_DATA_PATH OVPN_DATA_CID OVPN_INIT_CID builddocker
+build: HOSTNAME NAME TAG OVPN_DATA OVPN_DATA_PATH OVPN_DATA_CID OVPN_INIT_CID 
 
 # run a plain container
 run: build OVPN_CID
+
+cert: rmname NAME run mkcert
 
 OVPN_INIT_CID:
 	$(eval HOSTNAME := $(shell cat HOSTNAME))
 	$(eval OVPN_DATA := $(shell cat OVPN_DATA))
 	@docker run --volumes-from $(OVPN_DATA) --rm  --cidfile="OVPN_INIT_CID" -t kylemanna/openvpn ovpn_genconfig -u udp://$(HOSTNAME)
-	@docker run  --volumes-from $(OVPN_DATA)  --rm  -it -t kylemanna/openvpn ovpninitpki
+	@docker run  --volumes-from $(OVPN_DATA)  --rm  -it -t kylemanna/openvpn ovpn_initpki
 
-cert:
+mkcert:
 	$(eval NAME := $(shell cat NAME))
 	$(eval OVPN_DATA := $(shell cat OVPN_DATA))
 	@docker run \
 	--volumes-from $(OVPN_DATA) \
-	-d \
-	-p  1194:1194/udp \
-	--cap-add=NET_ADMIN \
+	--rm \
+	-it \
 	-t kylemanna/openvpn easyrsa build-client-full $(NAME) nopass
 	@docker run \
 	--volumes-from $(OVPN_DATA) \
@@ -81,3 +78,22 @@ HOSTNAME:
 	@while [ -z "$$HOSTNAME" ]; do \
 		read -r -p "Enter thehost name you wish to associate with this container [HOSTNAME]: " HOSTNAME; echo "$$HOSTNAME">>HOSTNAME; cat HOSTNAME; \
 	done ;
+ 
+rm:
+	@-docker kill `cat OVPN_CID`
+	@-docker rm `cat OVPN_CID`
+	@-rm OVPN_CID
+ 
+purge:
+	@-docker kill `cat OVPN_CID`
+	@-docker rm `cat OVPN_CID`
+	@-rm OVPN_CID
+	@-docker kill `cat OVPN_DATA_CID`
+	@-docker rm `cat OVPN_DATA_CID`
+	@-rm OVPN_DATA_CID
+	@-docker kill `cat OVPN_INIT_CID`
+	@-docker rm `cat OVPN_INIT_CID`
+	@-rm OVPN_INIT_CID
+
+rmname:
+	rm NAME
